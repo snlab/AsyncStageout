@@ -16,6 +16,7 @@ import traceback
 import urllib
 import re
 import json
+import ast
 from time import strftime
 import StringIO
 from WMCore.WMFactory import WMFactory
@@ -160,7 +161,9 @@ class TransferWorker:
             jobs, jobs_lfn, jobs_pfn, jobs_report = self.files_for_transfer()
             self.logger.debug("Processing files for %s " %self.user_proxy)
             if jobs:
-                self.command(jobs, jobs_lfn, jobs_pfn, jobs_report)
+                #Need to check if command is fdt or normal, for now hacking things around and using only fdt.
+                #self.command(jobs, jobs_lfn, jobs_pfn, jobs_report)
+                self.commandFDT(jobs, jobs_lfn, jobs_pfn, jobs_report)
         else:
             self.logger.debug("User proxy of %s could not be delagated! Trying next time." % self.user)
         self.logger.info('Transfers completed')
@@ -218,9 +221,13 @@ class TransferWorker:
                     self.logger.debug('Preparing PFNs...')
                     source_pfn = self.apply_tfc_to_lfn('%s:%s' % (source, item['value'][0]))
                     destination_pfn = self.apply_tfc_to_lfn('%s:%s' % (destination, item['value'][1]))
+                    self.logger.debug("%s %s" % (source_pfn, destination_pfn))
                     self.logger.debug('PFNs prepared...')
-                    if source_pfn and destination_pfn and self.valid_proxy:
+                    #Ignoring proxy for now
+                    #if source_pfn and destination_pfn and self.valid_proxy:
+                    if source_pfn and destination_pfn:
                         acquired_file, dashboard_report = self.mark_acquired([item])
+                        #self.logger.debug('ACQ %s' % item['id'])
                         self.logger.debug('Files have been marked acquired')
                         if acquired_file:
                             self.logger.debug('Starting FTS Job creation...')
@@ -229,7 +236,7 @@ class TransferWorker:
                             pfn_list.append(source_pfn)
                             # Prepare FTS Dashboard metadata
                             dash_report.append(dashboard_report)
-                            new_job.append('%s %s' % (source_pfn, destination_pfn))
+                            new_job.append('%s %s %s' % (source_pfn, destination_pfn, item['id']))
                             self.logger.debug('FTS job created...')
                         else:
                             pass
@@ -262,19 +269,21 @@ class TransferWorker:
             self.logger.error('it does not seem to be an lfn %s' %file.split(':'))
             return None
         if self.tfc_map.has_key(site):
-            pfn = self.tfc_map[site].matchLFN('srmv2', lfn)
-            # TODO: improve fix for wrong tfc on sites
-            try:
-                if pfn.find("\\") != -1: pfn = pfn.replace("\\", "")
-                if pfn.split(':')[0] != 'srm' and pfn.split(':')[0] != 'gsiftp':
+            pfn = self.apply_fdt_lfn(lfn, site)
+            if not pfn:
+                pfn = self.tfc_map[site].matchLFN('srmv2', lfn)
+                # TODO: improve fix for wrong tfc on sites
+                try:
+                    if pfn.find("\\") != -1: pfn = pfn.replace("\\", "")
+                    if pfn.split(':')[0] != 'srm' and pfn.split(':')[0] != 'gsiftp':
+                        self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
+                        return None
+                except IndexError:
                     self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
                     return None
-            except IndexError:
-                self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
-                return None
-            except AttributeError:
-                self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
-                return None
+                except AttributeError:
+                    self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
+                    return None
             # Add the pfn key into pfn-to-lfn mapping
             if not self.pfn_to_lfn_mapping.has_key(pfn):
                 self.pfn_to_lfn_mapping[pfn] = lfn
@@ -282,6 +291,52 @@ class TransferWorker:
         else:
             self.logger.error('Wrong site %s!' % site)
             return None
+
+    def apply_fdt_lfn(self, lfn, site):
+        """Try to apply FDT lfn """
+        pfn = self.tfc_map[site].matchLFN('fdt', lfn)
+        try:
+            if pfn.split(':')[0] != 'fdt':
+                self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
+                return None
+        except:
+            self.logger.error('Broken tfc for file %s at site %s' % (lfn, site))
+            return None
+        return pfn
+
+    def commandFDT(self, jobs, jobs_lfn, jobs_pfn, jobs_report):
+        """
+        Create file which will be for fdtcp;
+        create a directory which shows siteA and siteB and how much now is acquired;
+           if limit is reached, sleep, retry after 5 sec;
+        whenever finished, remove temp file and allow other transfer to begin
+        """
+        failure_reasons = []
+        self.logger.info("Justas jobs %s" % jobs)
+        self.logger.info('Creating files')
+        for link, value in jobs.items():     
+            transferKey = "%s_%s" % link
+            work_dir = "%s/FDTTransfers/%s" % (self.dropbox_dir, transferKey)
+            splitList = True
+            while splitList:
+                # I have to sleep because it goes too fast. Stupid, but... for now ok
+                time.sleep(0.5)
+                wrvalue = None
+                if len(value) > 10: # It will group transfers for 10 files in a row.
+                    wrvalue = value[:10]
+                    value = value[10:]
+                if not wrvalue:
+                    splitList = False
+                    wrvalue = value
+                ts = time.time()
+                fdt_job = str(ts) + '.json'
+                self.logger.debug("Creating json file %s in %s" % (fdt_job, work_dir))
+                if not os.path.exists(work_dir):
+                    os.makedirs(work_dir)
+                with open('%s/%s' % (work_dir, fdt_job), 'w') as fd:
+                    jsondata = json.dumps(value)
+                    fd.write(jsondata)
+                self.logger.debug('%s ready for FDT.' % fdt_job)
 
     def command(self, jobs, jobs_lfn, jobs_pfn, jobs_report):
         """

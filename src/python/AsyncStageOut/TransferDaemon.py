@@ -116,6 +116,7 @@ class TransferDaemon(BaseWorkerThread):
         query = {'stale':'ok'}
         try:
             params = self.config_db.loadView('asynctransfer_config', 'GetTransferConfig', query)
+            self.logger.debug("%s" % params)
             self.config.max_files_per_transfer = params['rows'][0]['key'][1]
             self.config.algoName = params['rows'][0]['key'][2]
         except IndexError:
@@ -130,11 +131,16 @@ class TransferDaemon(BaseWorkerThread):
         self.logger.debug('Active sites are: %s' % sites)
 
         site_tfc_map = {}
+        sites.append('T2_US_CaltechFDT')
+        sites.append('T2_US_UmichFDT')
+        sites.append('T3_CH_CernFDT1')
+        sites.append('T3_CH_CernFDT2')
         for site in sites:
             # TODO: Remove this check once the ASO request will be validated before the upload.
             if site and str(site) != 'None' and str(site) != 'unknown':
                 site_tfc_map[site] = self.get_tfc_rules(site)
         self.logger.debug('kicking off pool')
+        self.logger.debug('%s' % site_tfc_map)
         for u in users:
             self.logger.debug('current_running %s' %current_running)
             if u not in current_running:
@@ -207,6 +213,18 @@ class TransferDaemon(BaseWorkerThread):
             tfc_file = self.phedex.cacheFileName('tfc', inputdata={'node': site})
         except Exception, e:
             self.logger.exception('PhEDEx cache exception: %s' % e)
+        try:
+            import urllib2
+            import xml.etree.ElementTree as ET
+            response = urllib2.urlopen('https://raw.githubusercontent.com/juztas/sc15-siteconf/master/%s/storage.xml' % site)
+            tfc_content = response.read()
+            root = ET.fromstring(tfc_content)
+            tfc_file = '/tmp/%s.storage.xml' % site
+            with open(tfc_file, 'w') as fd:
+                fd.write(tfc_content)
+            #root.write(tfc_file)
+        except Exception, e:
+            self.logger.exception('Unable to get data from github! %s' % e)
         return readTFC(tfc_file)
 
     def terminate(self, parameters = None):
