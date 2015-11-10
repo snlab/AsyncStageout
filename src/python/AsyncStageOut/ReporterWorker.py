@@ -25,6 +25,7 @@ from WMCore.Credential.Proxy import Proxy
 from AsyncStageOut import getHashLfn
 from AsyncStageOut import getDNFromUserName
 import json
+import shutil
 
 def getProxy(userdn, group, role, defaultDelegation, logger):
     """
@@ -57,6 +58,12 @@ class ReporterWorker:
         self.user = user
         self.config = config
         self.dropbox_dir = '%s/dropbox/inputs' % self.config.componentDir
+        self.FDT = False
+        if user == 'FDTTransfers':
+            self.dropbox_dir = '%s/dropbox/outputs' % self.config.componentDir
+            self.user = 'jbalcas'
+            self.userFDT = user
+            self.FDT = True
         logging.basicConfig(level=config.log_level)
         self.logger = logging.getLogger('AsyncTransfer-Reporter-%s' % self.user)
         self.uiSetupScript = getattr(self.config, 'UISetupScript', None)
@@ -140,6 +147,9 @@ class ReporterWorker:
         c. deletes successfully transferred files from the DB
         """
         self.logger.info("Retrieving files for %s" % self.user)
+        if self.FDT:
+            self.fdt_updater()
+            return
         files_to_update = self.files_for_update()
         self.logger.info("%s files to process" % len(files_to_update))
         self.logger.debug("%s files to process" % files_to_update)
@@ -209,6 +219,58 @@ class ReporterWorker:
                 continue
         self.logger.info('Update completed')
         return
+
+    def fdt_updater(self):
+        """ """
+        files_to_update = []
+        files = []
+        user_dir = os.path.join(self.dropbox_dir, self.userFDT)
+        self.logger.info('Looking into %s' % user_dir)
+        for user_file in os.listdir(user_dir):
+            files_to_update.append(os.path.join(self.dropbox_dir, self.userFDT, user_file))
+        self.logger.info("QQQ: %s" % files_to_update)
+        for item in files_to_update:
+            dir_scan = os.path.join(item, 'FINISHED')
+            dir_done = os.path.join(item, 'DONE')
+            if not os.path.isdir(dir_done):
+                try:
+                    os.makedirs(dir_done)
+                except OSError, e:
+                    if e.errno == errno.EEXIST:
+                        pass
+                    else:
+                        self.logger.error('Unknown error in mkdir' % e.errno)
+                        pass
+            self.logger.info("dir_scan %s" % dir_scan)
+            for user_file in os.listdir(dir_scan):
+                #Open file;
+                self.logger.info("B1")
+                fullFilePath = os.path.join(dir_scan, user_file)
+                json_out = {}
+                try:
+                    with open(fullFilePath, 'r') as fd:
+                        self.logger.info('C1')
+                        json_out = json.load(fd)
+                        for item in json_out:
+                            self.logger.info("AAAAAAAAAAA")
+                            tempI = item.split(" ")
+                            # 0 source, 1 - dest, 2 - couchID, 3 - size
+                            # It is already PFN, so we need to split it.
+                            # I should be using already couch ID and not make hacks around
+                            pfn_split = tempI[0].split("/")
+                            new_lfn = "/" + "/".join(pfn_split[3:])
+                            files.append(new_lfn)
+                except IOError as ex:
+                    self.logger.debug("Got IOError. Skipping this read.")
+                    pass
+                except:
+                    self.logger.debug("Failed to make as json. Move to done")
+                    pass
+                #Move file
+                self.logger.info("AAAAAAAAA: Move files %s" % fullFilePath)
+                shutil.move(fullFilePath, dir_done)
+        self.logger.info("Mark done: %s" % files)
+        self.mark_good(files)
 
     def files_for_update(self):
         """

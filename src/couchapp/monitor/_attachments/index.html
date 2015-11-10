@@ -112,7 +112,7 @@
         <a>&nbsp;&nbsp;Y-Axis Unit&nbsp;</a>
         <select id="yaxis">
                 <option value="njobs" text="Number of Files">Number of Files</option>
-                <option value="size" text="Files Size (MB)">Files Size (MB)</option>
+                <option value="size" text="Files Size (GB)">Files Size (GB)</option>
         </select>
         </form>
         <center><INPUT TYPE="button" NAME="button" Value="Reload Plots" onClick='drawchart(true)'></center>
@@ -165,7 +165,7 @@ var defaultDateTime = true;
 
 var yaxis = ("njobs").toString();
 var yaxisLabel = "Number of Files";
-var MB = 1048576;
+var MB = 1073741824;
 
 function isStartDateDefined() {
     return ($("input#start").val() != '');
@@ -258,7 +258,7 @@ function setYAxisLabel() {
         yaxisLabel = "Number of Files";
     }
     else if (yaxis == ("size").toString()) {
-        yaxisLabel = "Files Size (MB)";
+        yaxisLabel = "Files Size (GB)";
     }
     return "";
 }
@@ -298,7 +298,7 @@ inpute.popolate = function() {
     var startkey = getDateTimeKey(startd,"view");
     var endkey = getDateTimeKey(endd,"view");
     xmlhttp = new XMLHttpRequest();
-    xmlhttp.open("GET", "../MonitorStartedEnded/_view/endedSizeByTime?stale=ok&group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey + "]", false);
+    xmlhttp.open("GET", "/couchdb/asynctransfer/_design/MonitorStartedEnded/_view/endedSizeByTime?group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey + "]", false);
     xmlhttp.send();
     var response = eval("(" + xmlhttp.responseText + ")")["rows"];
     var rs = 0;
@@ -336,7 +336,7 @@ inputs.popolate = function() {
     var startkey = getDateTimeKey(startd,"view");
     var endkey = getDateTimeKey(endd,"view");
     xmlhttp = new XMLHttpRequest();
-    xmlhttp.open("GET", "../MonitorStartedEnded/_view/startedSizeByTime?stale=ok&group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey + "]", false);
+    xmlhttp.open("GET", "/couchdb/asynctransfer/_design/MonitorStartedEnded/_view/startedSizeByTime?group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey + "]", false);
     xmlhttp.send();
     var response = eval("(" + xmlhttp.responseText + ")")["rows"];
     var rs = 0;
@@ -374,7 +374,7 @@ inputes.popolate = function() {
     var startkey = getDateTimeKey(startd,"view");
     var endkey = getDateTimeKey(endd,"view");
     xmlhttp = new XMLHttpRequest();
-    xmlhttp.open("GET", "../MonitorStartedEnded/_view/endedSizeByTime?stale=ok&group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey +"]", false);
+    xmlhttp.open("GET", "/couchdb/asynctransfer/_design/MonitorStartedEnded/_view/endedSizeByTime?group_level=4&startkey=[" + startkey + "]&endkey=[" + endkey +"]", false);
     xmlhttp.send();
     var response = eval("(" + xmlhttp.responseText + ")")["rows"];
     var rs = 0;

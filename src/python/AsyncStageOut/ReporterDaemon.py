@@ -15,7 +15,7 @@ from WMCore.WMFactory import WMFactory
 import logging
 #import time
 import os
-
+import random
 result_list = []
 current_running = []
 
@@ -84,16 +84,21 @@ class ReporterDaemon(BaseWorkerThread):
                     raise
         result_list = []
         current_running = []
+        self.dropbox_dir_fdt = '%s/dropbox/outputs' % self.config.componentDir
+        self.dirs = [self.dropbox_dir, self.dropbox_dir_fdt]
 
     # Over riding setup() is optional, and not needed here
     def algorithm(self, parameters = None):
         """
         1. Get a list of users with files to transfer from the FS
         2. Submit the report to a subprocess
-       """
+        """
+        i = random.randint(0,1)
+        directory = self.dirs[i]
         users = []
-        for user_dir in os.listdir(self.dropbox_dir):
-            if os.path.isdir(os.path.join(self.dropbox_dir, user_dir)) and os.listdir(os.path.join(self.dropbox_dir, user_dir)):
+        self.logger.info(directory)
+        for user_dir in os.listdir(directory):
+            if os.path.isdir(os.path.join(directory, user_dir)) and os.listdir(os.path.join(directory, user_dir)):
                 users.append(user_dir)
 
         self.logger.info('Active users %s' % len(users))
@@ -108,6 +113,7 @@ class ReporterDaemon(BaseWorkerThread):
                 self.logger.debug('New reporter for %s' % u)
                 current_running.append(u)
                 self.pool.apply_async(reporter,(u, self.config), callback = log_result)
+
 
     def terminate(self, parameters = None):
         """

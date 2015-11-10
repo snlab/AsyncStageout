@@ -221,13 +221,14 @@ class TransferWorker:
                     self.logger.debug('Preparing PFNs...')
                     source_pfn = self.apply_tfc_to_lfn('%s:%s' % (source, item['value'][0]))
                     destination_pfn = self.apply_tfc_to_lfn('%s:%s' % (destination, item['value'][1]))
+                    size_source = int(item['value'][2])
                     self.logger.debug("%s %s" % (source_pfn, destination_pfn))
                     self.logger.debug('PFNs prepared...')
                     #Ignoring proxy for now
                     #if source_pfn and destination_pfn and self.valid_proxy:
                     if source_pfn and destination_pfn:
                         acquired_file, dashboard_report = self.mark_acquired([item])
-                        #self.logger.debug('ACQ %s' % item['id'])
+                        #self.logger.debug('ACQ %s' % item)
                         self.logger.debug('Files have been marked acquired')
                         if acquired_file:
                             self.logger.debug('Starting FTS Job creation...')
@@ -236,7 +237,7 @@ class TransferWorker:
                             pfn_list.append(source_pfn)
                             # Prepare FTS Dashboard metadata
                             dash_report.append(dashboard_report)
-                            new_job.append('%s %s %s' % (source_pfn, destination_pfn, item['id']))
+                            new_job.append('%s %s %s %s' % (source_pfn, destination_pfn, item['id'], int(size_source)))
                             self.logger.debug('FTS job created...')
                         else:
                             pass
@@ -318,25 +319,56 @@ class TransferWorker:
             transferKey = "%s_%s" % link
             work_dir = "%s/FDTTransfers/%s" % (self.dropbox_dir, transferKey)
             splitList = True
+            num = 0
             while splitList:
                 # I have to sleep because it goes too fast. Stupid, but... for now ok
-                time.sleep(0.5)
+                #time.sleep(0.5)
                 wrvalue = None
-                if len(value) > 10: # It will group transfers for 10 files in a row.
-                    wrvalue = value[:10]
-                    value = value[10:]
+                minSize = 1*1024*1024*1024
+                size = 0
+                self.logger.debug("AAA %s" % value)
+                if len(value) > 2: # It will group transfers for 5 files in a row.
+                    wrvalue = value[:2]
+                    for item1 in wrvalue:
+                        temp1 = item1.split(" ")
+                        self.logger.debug("BBB %s" % temp1)
+                        size += int(temp1[3])
+                    self.logger.debug("BBB1 %s " % size)
+                    value = value[2:]
+                    self.logger.debug("Write %s, left %s" % (len(wrvalue), len(value)))
                 if not wrvalue:
+                    self.logger.debug("wrvalue is not set, so will not split line anymore.")
                     splitList = False
                     wrvalue = value
+                #Rethink of the size and how much I should add more
+                self.logger.debug("Checking by size %s " % value)
+                while size < minSize:
+                    self.logger.debug("Start1 %s" % value)
+                    self.logger.debug("Start2 %s " % value[:1])
+                    tempItem = value[:1]
+                    self.logger.debug("CCC %s" % tempItem)
+                    if tempItem:
+                        self.logger.debug("DDD %s" % tempItem)
+                        tempItemV = tempItem[0].split(" ")
+                        size += int(tempItemV[3])
+                        value = value[1:]
+                        wrvalue.append(tempItem[0])
+                    else:
+                        self.logger.debug("DDD1 break")
+                        splitList = False
+                        break
+                self.logger.debug("Finished checking by size")
                 ts = time.time()
-                fdt_job = str(ts) + '.json'
+                fdt_job = str(ts) + "_" + str(num) + '.json'
+                num += 1
                 self.logger.debug("Creating json file %s in %s" % (fdt_job, work_dir))
                 if not os.path.exists(work_dir):
                     os.makedirs(work_dir)
                 with open('%s/%s' % (work_dir, fdt_job), 'w') as fd:
-                    jsondata = json.dumps(value)
+                    jsondata = json.dumps(wrvalue)
                     fd.write(jsondata)
                 self.logger.debug('%s ready for FDT.' % fdt_job)
+        return
 
     def command(self, jobs, jobs_lfn, jobs_pfn, jobs_report):
         """
