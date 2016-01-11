@@ -12,13 +12,13 @@ import logging
 
 DIR = "./install/asyncstageout/AsyncTransfer/dropbox/outputs/FDTTransfers"
 MaxWorkersPerThread = 1
-MaxWorkersIncreasedThreads = 5
+MaxWorkersIncreasedThreads = 2
 UseCircuitTreshold = 1
 DELAY = 5 # In seconds between each thread execution for finding all files.
 NEW_THREAD_DELAY = 3*60 # After 10 minutes new thread will be created.
 END_THREAD_DELAY = 5*60 # After five minutes thread will go away. Except first MaxWorkersPerThread
 
-def workerT(i, threadName, q, logger, useCircuit=True):
+def workerT(i, threadName, q, logger, useCircuit=True, which_circuit = 0):
     """ This is the worker thread function.
     It processes items in the queu on after another
     logic:
@@ -94,18 +94,22 @@ def workerT(i, threadName, q, logger, useCircuit=True):
         #print 'Executing cp command'
         if useCircuit:
             print circuitData
-            command = "env -i HOME=/tmp/fdtcp/ fdtcp -f %s -l %s -i %s -y %s" % (fdtcpFileName, logsFile, circuitData[threadName][0], circuitData[threadName][1])
+            circuitIPs  = circuitData[threadName][0]
+            command = "env -i HOME=/tmp/fdtcp/ fdtcp -f %s -l %s -i %s -y %s" % (fdtcpFileName, logsFile, circuitIPs[0], circuitIPs[1])
             logger.info("%s-%s: Thread worker started fdtcp copy. Full command %s" % (threadName, i, command))
         else:
-            command = "env -i HOME=/tmp/fdtcp/ fdtcp -f %s -l %s" % (fdtcpFileName, logsFile)
-            logger.info("%s-%s: Thread worker started fdtcp copy. Full command %s" % (threadName, i, command))
+            'Circuit is not configured. continue to take another task'
+            q.task_done()
+            continue
+            #command = "env -i HOME=/tmp/fdtcp/ fdtcp -f %s -l %s" % (fdtcpFileName, logsFile)
+            #logger.info("%s-%s: Thread worker started fdtcp copy. Full command %s" % (threadName, i, command))
         ret = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for line in ret.stdout.readlines():
             logger.debug("%s-%s: stdout: %s" % (threadName, i, line))
         retval = ret.wait()
         logger.info("%s-%s: fdtcp command finished. exit code: %s" % ( threadName, i, retval))
         filesToMove.append(logsFile)
-        if retval == 1 and useCircuit:
+        if retval == 1 and useCircuit and False:
             filesToMove.append("%s/%s" % (LOG_DIR, logsFile))
             # Return value is always 1 which I don`t like and this has to be different.
             # Take a look after sc15 how to return better value.
@@ -192,11 +196,19 @@ def execute_thread( threadName, delay, logger):
     while True:
         time.sleep(delay)
         logger.info("%s: %s %s" % (threadName, totalWorkers, MaxWorkersIncreasedThreads))
-        if totalWorkers < MaxWorkersIncreasedThreads:
+        #Read the circuit and check how many NICs we have. if you have more than 1, there is need to create more threads.
+        circuitData = readCircuits()
+        circuitsCount = 0
+        if threadName in circuitData:
+            circuitsCount  = len(circuitData[threadName]) + 1
+        if totalWorkers < MaxWorkersIncreasedThreads or int(circuitsCount - 1) > totalWorkers: # need to document why is like that.
             threadStart, prev_queue_size, new_thread_counter = new_thread_needed(privateThreadQueue.qsize(), totalWorkers, prev_queue_size, DELAY, new_thread_counter)
             if threadStart:
                 logger.debug("%s: Creating new worker for this thread. Queue is too big and not progressing." % threadName)
-                worker = Thread(target=workerT, args=(totalWorkers, threadName, privateThreadQueue, logger, True))
+                if new_thread_counter > circuitsCount:
+                    worker = Thread(target=workerT, args=(totalWorkers, threadName, privateThreadQueue, logger, True, totalWorkers))
+                else:
+                    worker = Thread(target=workerT, args=(totalWorkers, threadName, privateThreadQueue, logger, True, 0))
                 worker.setDaemon(True)
                 worker.start()
                 totalWorkers += 1

@@ -7,28 +7,38 @@ from WMCore.Database.CMSCouch import CouchServer
 from WMCore.Configuration import loadConfigurationFile
 import datetime
 import time
+import sys
 from random import shuffle
 
 config = loadConfigurationFile('config/asyncstageout/config.py')
 server = CouchServer(config.AsyncTransfer.couch_instance)
 db = server.connectDatabase(config.AsyncTransfer.files_database)
 
-users = ['jbalcas', 'ramiro', 'iosif', 'harvey']
+#users = ['jbalcas', 'ramiro', 'iosif', 'harvey']
 
-sites = ['T2_US_CaltechFDT',
-         'T2_US_UmichFDT']
+#sites = ['T2_US_CaltechFDT',
+#         'T2_US_UmichFDT']
 #         'T3_CH_CernFDT1', 'T3_CH_CernFDT2']
 
-dest_sitesL = sites
-users_dest = {'jbalcas': 'T3_CH_CernFDT1', 'ramiro': 'T2_US_CaltechFDT', 'iosif': 'T2_CH_CernFDT2', 'harvey':'T2_US_UmichFDT'}
+#sites = ['T2_']
+
+#dest_sitesL = sites
 
 size = 200 #TODO: readize = 2000 #TODO: read from script input
 i = 100
  
 # lfn_base has store/temp in it twice to make sure that
 # the temp->permananet lfn change is correct.
-lfn_base = '/store/temp/user/%s/my_cool_dataset%s_%s/file-%s-%s.root'
-dest_lfn = '/store/user/%s/my_cool_dataset%s_%s/file-%s-%s.root'
+
+#lfn_base_site = {'T2_US_FIU': '/store/temp/user/%s/zero/',
+#                 'T2_US_SC01': ['/store%s/temp/user/%s/my_cool_dataset%s_%s/file-%s-%s.root', 3],
+#                 'T2_US_SC02': ['/store%s/temp/user/%s/my_cool_dataset%s_%s/file-%s-%    s.root', 3],
+#                 'T2_US_SC03': ['/store%s/temp/user/%s/my_cool_dataset%s_%s/file-%s-%        s.root', 3]}
+#
+#dest_lfn_site = {}
+
+lfn_base = '/store/temp/user/%(user)s/my_cool_dataset%(source)s_%(dest)s/file-%(id)s-%(i)s.root'
+dest_lfn = '/store/user/%(user)s/my_cool_dataset%(source)s_%(dest)s/file-%(id)s-%(i)s.root'
 
 now = str(datetime.datetime.now())
 job_end_time =datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -37,61 +47,49 @@ last_update = int(time.time());
 print "Script starts at %s" %now
 
 q = []
-for sourceSite in sites:
-    for destSite in sites:
-        for i in range(1,21):
-            temp = []
-            temp.append(sourceSite)
-            temp.append(destSite)
-            temp.append(i)
-            temp.append(users[random.randint(0,int(len(users)-1))])
-            q.append(temp)
+#for sourceSite in sites:
+#    for destSite in sites:
+#        for i in range(1,21):
+#            temp = []
+#            temp.append(sourceSite)
+#            temp.append(destSite)
+#            temp.append(i)
+#            temp.append(users[random.randint(0,int(len(users)-1))])
+#            q.append(temp)
         
-joint_transfers = q
+#joint_transfers = q
+#
+#sizesOfSource = {"T2_US_UmichFDT" : 20*1024*1024*1024,
+#                 "T2_US_CaltechFDT": 20*1024*1024*1024,
+#                 "T3_CH_CernFDT2" : int(0.1*1024*1024*1024),
+#                 "T3_CH_CernFDT1" : int(0.1*1024*1024*1024)}
 
-sizesOfSource = {"T2_US_UmichFDT" : 20*1024*1024*1024,
-                 "T2_US_CaltechFDT": 20*1024*1024*1024,
-                 "T3_CH_CernFDT2" : int(0.1*1024*1024*1024),
-                 "T3_CH_CernFDT1" : int(0.1*1024*1024*1024)}
-
-TODEVNULL = True # This means destination lfn will be /store/user/USERNAME/null.
+#TODEVNULL = True # This means destination lfn will be /store/user/USERNAME/null.
 # And it has to have a symlink to dev null
-if TODEVNULL:
-    dest_lfn = "/store/user/%s/null/"
+#if TODEVNULL:
+#    dest_lfn = "/store/user/%s/null/"
 
-shuffle(joint_transfers)
+#shuffle(joint_transfers)
 
-a = 0
-for item in joint_transfers:
-    print item
-    a = item[2]
-    dest = item[0]
-    source_site = item[1]
-    user = 'jbalcas' # item[3]
-    source_size = sizesOfSource[source_site]
-    if source_site == dest:
-        continue
-    i = 100
-    print 'LOOP'
+source_site = sys.argv[1]
+dest_site = sys.argv[2]
+source_lfn = lfn_base
+dest_lfn = dest_lfn
+source_size = sys.argv[5]
+
+user = 'jbalcas'
+dict_keys = {'user': user, 'source': source_site, 'dest': dest_site, 'id': 0, 'i': 0}
+cont = True
+i = 0
+while cont:
     while i <= size:
-        id=0
-        # We don`t want to make transfers from same site to same
-        if source_site == dest:
-            print 'Same. Ignore'
-            continue
-        #ha = lfn_base + random.random
-        #_id=getHashLfn(lfn_base % (user,id , i))
         state='new'
-        DDD = None
-        if not TODEVNULL:
-            DDD = dest_lfn % (user,a, source_site, id, i)
-        else:
-            DDD = dest_lfn % user
-        _id = getHashLfn(lfn_base % (user, a, source_site, id, i))
+        dict_keys['i'] = i
+        _id = getHashLfn(source_lfn % dict_keys)
         file_doc = {'_id': '%s' % _id,
-                'lfn': lfn_base % (user,a, source_site, id, i),
-                'destination_lfn' :DDD,
-                'source_lfn' : lfn_base % (user,a, source_site, id, i),
+                'lfn': lfn_base % dict_keys,
+                'destination_lfn' :dest_lfn % dict_keys,
+                'source_lfn' : lfn_base % dict_keys,
                 'end_time' : '',
                 'dn': 'UserDN',
                 #'_attachments': '',
@@ -110,7 +108,7 @@ for item in joint_transfers:
                 'publication_retry_count': [],
                 'group': '',
                 'jobid': '%s' %(random.randint(1,1000)),
-                'destination': dest,
+                'destination': dest_site,
                 'start_time' : now,
                 'state' : state,
                 'last_update': last_update,
@@ -139,3 +137,4 @@ for item in joint_transfers:
             print "Error when commiting docs"
             print ex
         i += 1
+    cont = False
